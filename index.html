@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h2>OpenAI Realtime WebRTC Demo</h2>
+<div id="output" style="font-size:20px; white-space:pre-line;"></div>
+
+<script>
+const API_KEY = "YOUR_API_KEY";   // ← 여기에 넣기
+
+const log = (msg) => {
+  document.getElementById("output").innerHTML += msg + "<br>";
+};
+
+async function start() {
+  const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const pc = new RTCPeerConnection();
+
+  mic.getTracks().forEach((t) => pc.addTrack(t, mic));
+
+  let dataChannel = pc.createDataChannel("oai-events");
+
+  dataChannel.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+
+    // 실시간 텍스트 스트림
+    if (msg.type === "response.output_text.delta") {
+      const text = msg.delta;
+      log("📝 " + text);
+
+      // Python 서버로 전달
+      fetch("http://localhost:8000/process", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text }),
+      });
+    }
+  };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  const resp = await fetch(
+    "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${API_KEY}`,
+        "Content-Type": "application/sdp",
+        "OpenAI-Beta": "realtime=v1"
+      },
+      body: offer.sdp
+    }
+  );
+
+  const answer = await resp.text();
+  await pc.setRemoteDescription({ type: "answer", sdp: answer });
+
+  log("🎉 Connected! Speak now...");
+}
+
+start();
+</script>
+</body>
+</html>
