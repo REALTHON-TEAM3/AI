@@ -2,46 +2,68 @@
 <html>
 <body>
 <h2>OpenAI Realtime WebRTC Demo</h2>
-<div id="output" style="font-size:20px; white-space:pre-line;"></div>
+
+<div id="output" style="font-size:18px; white-space:pre-line; border:1px solid #aaa; padding:10px; width:500px; height:300px; overflow:auto;">
+  <b>[로그 출력 영역]</b><br>
+</div>
 
 <script>
-const API_KEY = "YOUR_API_KEY";   // ← 여기에 넣기
+// ------------------------
+// 🔧 여기에 API KEY 넣기
+// ------------------------
+const API_KEY = "YOUR_API_KEY";
 
-const log = (msg) => {
+// 화면에 로그 찍기
+function log(msg) {
   document.getElementById("output").innerHTML += msg + "<br>";
-};
+  console.log(msg);
+}
 
 async function start() {
-  const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+  log("🚀 초기화 시작...");
+
+  // 1) 마이크 권한 요청
+  let mic;
+  try {
+    mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+    log("🎤 마이크 허용 OK");
+  } catch (err) {
+    log("❌ 마이크 권한 실패: " + err);
+    return;
+  }
+
+  // 2) WebRTC PeerConnection 생성
   const pc = new RTCPeerConnection();
 
-  mic.getTracks().forEach((t) => pc.addTrack(t, mic));
+  // 3) GPT가 데이터 채널을 만들어 보낼 때 감지
+  pc.ondatachannel = (event) => {
+    const channel = event.channel;
 
-  let dataChannel = pc.createDataChannel("oai-events");
+    log("📡 데이터 채널 생성됨: " + channel.label);
 
-  dataChannel.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-
-    // 실시간 텍스트 스트림
-    if (msg.type === "response.output_text.delta") {
-      const text = msg.delta;
-      log("📝 " + text);
-
-      // Python 서버로 전달
-      fetch("http://localhost:8000/process", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ text }),
-      });
-    }
+    // 🔥🔥🔥 GPT가 보내는 메시지를 화면에 출력
+    channel.onmessage = (e) => {
+      log("🔵 수신: " + e.data);
+    };
   };
 
+  // 4) 로컬 데이터 채널 (이벤트 전송용)
+  const sendChannel = pc.createDataChannel("oai-events");
+
+  sendChannel.onopen = () => log("🟢 sendChannel OPEN");
+  sendChannel.onclose = () => log("🔴 sendChannel CLOSED");
+
+  // 5) 마이크 트랙을 WebRTC에 추가
+  mic.getTracks().forEach(t => pc.addTrack(t, mic));
+  log("🎙️ 마이크 트랙 추가됨");
+
+  // 6) Offer 생성
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
+  log("📨 Offer 생성됨");
 
-  const resp = await fetch(
+  // 7) Offer를 GPT Realtime API에 보내기
+  const answer = await fetch(
     "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
     {
       method: "POST",
@@ -52,12 +74,14 @@ async function start() {
       },
       body: offer.sdp
     }
-  );
+  ).then(res => res.text());
 
-  const answer = await resp.text();
+  log("📩 Answer 수신됨");
+
+  // 8) Answer를 WebRTC에 적용
   await pc.setRemoteDescription({ type: "answer", sdp: answer });
 
-  log("🎉 Connected! Speak now...");
+  log("🎉 연결 성공! 이제 말하면 바로 텍스트가 뜬다.");
 }
 
 start();
