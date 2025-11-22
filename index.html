@@ -26,17 +26,22 @@
         display: none; /* 평소에는 숨김 */
       }
       /* --- [추가] 레시피 검색 디자인 --- */
-      #recipe-section {
-        margin-bottom: 20px;
+      .search-section {
+        margin-bottom: 15px;
         display: flex;
         gap: 10px;
+        align-items: center;
       }
       input {
         padding: 10px;
         font-size: 16px;
         border: 1px solid #ddd;
         border-radius: 5px;
-        width: 200px;
+        width: 250px;
+      }
+      .label {
+        font-weight: bold;
+        width: 80px;
       }
       #status {
         margin-top: 20px;
@@ -81,14 +86,18 @@
   <body>
     <h1>⚡ Voice Chef (Realtime API)</h1>
 
-    <!-- 레시피 검색 섹션 -->
-    <div id="recipe-section">
-      <input
-        type="text"
-        id="menuInput"
-        placeholder="요리 이름 (예: 김치찌개)"
-      />
-      <button onclick="searchRecipe()">레시피 설정</button>
+    <!-- 1. 요리 이름 검색 -->
+    <div class="search-section">
+      <span class="label">요리 이름:</span>
+      <input type="text" id="menuInput" placeholder="예: 김치찌개" />
+      <button onclick="searchMenu()">레시피 검색</button>
+    </div>
+
+    <!-- 2. 유튜브 링크 검색 -->
+    <div class="search-section">
+      <span class="label">유튜브 URL:</span>
+      <input type="text" id="youtubeInput" placeholder="유튜브 링크 붙여넣기" />
+      <button onclick="searchYoutube()">영상 분석</button>
     </div>
 
     <div id="timer-display">00:00</div>
@@ -109,23 +118,44 @@
       let nextStartTime = 0;
       let timerInterval = null; // 타이머 인터벌 변수
 
-      // --- [추가] 레시피 검색 함수 ---
-      async function searchRecipe() {
+      // --- 1. 메뉴 이름으로 검색 ---
+      async function searchMenu() {
         const menuName = document.getElementById("menuInput").value;
         if (!menuName) {
           alert("요리 이름을 입력해주세요!");
           return;
         }
+        await sendRecipeRequest(
+          "/recipe",
+          { menu_name: menuName },
+          `🔍 요리 검색: ${menuName}`
+        );
+      }
 
-        log(`🔍 레시피 검색 중: ${menuName}...`);
+      // --- 2. 유튜브 링크로 검색 ---
+      async function searchYoutube() {
+        const videoUrl = document.getElementById("youtubeInput").value;
+        if (!videoUrl) {
+          alert("유튜브 링크를 입력해주세요!");
+          return;
+        }
+        await sendRecipeRequest(
+          "/youtube-recipe",
+          { video_url: videoUrl },
+          `🎥 영상 분석 시작: ${videoUrl}`
+        );
+      }
+
+      // --- 공통 요청 함수 ---
+      async function sendRecipeRequest(endpoint, bodyData, logMessage) {
+        log(logMessage);
+        log("⏳ 처리 중입니다. 잠시만 기다려주세요...");
 
         try {
-          const response = await fetch("/recipe", {
+          const response = await fetch(endpoint, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ menu_name: menuName }),
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(bodyData),
           });
 
           const result = await response.json();
@@ -133,18 +163,16 @@
           if (response.ok) {
             log("✅ 레시피 설정 완료!");
             log("--------------------------------");
-            log(result.recipe_text); // 레시피 내용 로그에 출력
+            log(result.recipe_text.substring(0, 200) + "..."); // 너무 기니까 앞부분만 로그에 표시
             log("--------------------------------");
-            alert(
-              "레시피가 설정되었습니다. 이제 'Start Conversation'을 눌러 요리를 시작하세요!"
-            );
+            alert("레시피가 설정되었습니다! 이제 대화를 시작하세요.");
           } else {
             log(`❌ 에러: ${result.error}`);
-            alert("레시피를 가져오는데 실패했습니다.");
+            alert("실패했습니다. 로그를 확인하세요.");
           }
         } catch (error) {
           log(`❌ 네트워크 에러: ${error}`);
-          alert("서버 연결에 실패했습니다.");
+          alert("서버 연결 실패");
         }
       }
 

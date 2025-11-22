@@ -46,15 +46,16 @@ def recog_video(prompt: str, url: str, model: genai.GenerativeModel, generation_
             
         logger.info(f"File uploaded successfully: {uploaded_file.name}")
 
+        # [추가] 파일 처리가 완료될 때까지 대기 (ACTIVE 상태 확인)
         while True:
             file = genai.get_file(uploaded_file.name)
             if file.state.name == "ACTIVE":
-                logger.info(f"File is ACTIVE and ready for processing")
+                logger.info("File is ACTIVE and ready for processing.")
                 break
             elif file.state.name == "FAILED":
-                raise ValueError(f"File upload failed: {file.error.message}")
-
-            logger.info(f"File is {file.state.name}, waiting for ACTIVE...")
+                raise ValueError("File processing failed on Gemini server.")
+            
+            logger.info("Waiting for file processing...")
             time.sleep(2)
 
         # Make the Gemini API call
