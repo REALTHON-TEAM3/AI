@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-GOOGLE_API_KEY = os.getenv("GOOGLE_AI_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_AI_API")
 genai.configure(api_key=GOOGLE_API_KEY)
 
 # 검색 도구 없이 일반 모델 사용 (API 호환성 문제로 인해)
