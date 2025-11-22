@@ -51,19 +51,23 @@ async def get_recipe(request: RecipeRequest):
         print(f"{'='*60}")
         
         # search_service의 함수 호출
-        from api.search_service import search_recipe_text
+        from api.search_service import search_recipe_text, estimate_cooking_time
         recipe_text = await search_recipe_text(request.menu_name)
+        
+        # 예상 시간 계산
+        estimated_time = await estimate_cooking_time(recipe_text)
         
         # search_service의 전역 변수에 저장
         search_service.current_recipe = recipe_text
         
         # 서버에서 출력
         print(f"\n[레시피 결과]\n{recipe_text}\n")
+        print(f"⏱️ 예상 조리 시간: {estimated_time}분")
         print(f"{'='*60}\n")
         
         return JSONResponse({
             "success": True,
-            "recipe_text": recipe_text
+            "estimated_time": estimated_time
         })
         
     except Exception as e:
@@ -84,19 +88,23 @@ async def get_youtube_recipe(request: YoutubeRequest):
         print(f"{'='*60}")
         
         # search_service의 함수 호출
-        from api.search_service import search_recipe_video
+        from api.search_service import search_recipe_video, estimate_cooking_time
         recipe_text = await search_recipe_video(request.video_url)
+        
+        # 예상 시간 계산
+        estimated_time = await estimate_cooking_time(recipe_text)
         
         # search_service의 전역 변수에 저장
         search_service.current_recipe = recipe_text
         
         # 서버에서 출력
         print(f"\n[유튜브 레시피 결과]\n{recipe_text}\n")
+        print(f"⏱️ 예상 조리 시간: {estimated_time}분")
         print(f"{'='*60}\n")
         
         return JSONResponse({
             "success": True,
-            "recipe_text": recipe_text
+            "estimated_time": estimated_time
         })
         
     except Exception as e:
@@ -139,6 +147,18 @@ async def timer_task(seconds: int, client_ws: WebSocket, openai_ws):
                 ]
             }
         }))
+
+        try:
+            await openai_ws.send(json.dumps({
+                "type": "response.create",
+                "response": {
+                    "modalities": ["text", "audio"], # 텍스트와 오디오로 응답
+                    "instructions": "타이머 종료를 알리고 다음 단계를 안내해주세요." # (선택) 지시사항 추가 가능
+                }
+            }))
+        except Exception as ws_e:
+            print(f"[Timer] OpenAI 메시지 전송 실패 (연결 종료됨?): {ws_e}")
+        
     except Exception as e:
         print(f"[Timer] 에러 발생: {e}")
 
@@ -174,7 +194,11 @@ async def websocket_endpoint(client_ws: WebSocket):
                         - "3분 동안 볶아주세요. 타이머를 시작할까요?"
                     - 사용자가 "응", "그래", "시작해", "네" 등으로 **명확하게 동의했을 때만** `start_timer` 도구를 실행하세요.
 
-                    3. 타이머가 돌아가는 동안에는 잡담을 하지 말고 조용히 기다리세요.
+                    3. **[중요: 타이머 작동 중 침묵]**
+                    - `start_timer` 도구를 실행한 직후에는 **"네, 3분 타이머를 시작합니다."라고 짧게 말하고 즉시 침묵하세요.**
+                    - **절대로** "타이머가 끝날 때까지 기다려주세요" 뒤에 "다음 단계는..."이라며 말을 이어가지 마세요.
+                    - 타이머가 돌아가는 동안에는 **사용자가 먼저 말을 걸기 전까지 절대 먼저 말하지 마세요.**
+                    - 타이머가 종료되었다는 시스템 메시지를 받으면 그때 비로소 "타이머가 끝났습니다. 다음 단계로 넘어갈까요?"라고 말하세요.
 
                     4. 사용자가 요리 단계 이외의 질문(재료 대체, 팁, 조리 관련 궁금증 등)을 하면
                     - 단계 진행을 잠시 멈추고 질문에 대답한 뒤
@@ -326,6 +350,8 @@ async def websocket_endpoint(client_ws: WebSocket):
                             "audio": b64_audio
                         }
                         await openai_ws.send(json.dumps(event))
+                except (WebSocketDisconnect, websockets.exceptions.ConnectionClosed):
+                    print("Client disconnected.")
                 except Exception as e:
                     print(f"Client receive error: {e}")
 

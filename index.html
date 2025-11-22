@@ -163,9 +163,11 @@
           if (response.ok) {
             log("✅ 레시피 설정 완료!");
             log("--------------------------------");
-            log(result.recipe_text.substring(0, 200) + "..."); // 너무 기니까 앞부분만 로그에 표시
+            log(`⏱️ 예상 조리 시간: ${result.estimated_time}분`);
             log("--------------------------------");
-            alert("레시피가 설정되었습니다! 이제 대화를 시작하세요.");
+            alert(
+              `레시피가 설정되었습니다! (예상 시간: ${result.estimated_time}분)\n이제 대화를 시작하세요.`
+            );
           } else {
             log(`❌ 에러: ${result.error}`);
             alert("실패했습니다. 로그를 확인하세요.");
@@ -288,6 +290,8 @@
               channelCount: 1,
               sampleRate: 24000,
               echoCancellation: true,
+              noiseSuppression: true, // [추가] 잡음 제거
+              autoGainControl: true, // [추가] 자동 볼륨 조절
             },
           });
 

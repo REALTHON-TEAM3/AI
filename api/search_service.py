@@ -112,28 +112,61 @@ async def search_recipe_video(video_url: str) -> str:
         return f"❌ 영상 분석 중 에러 발생: {str(e)}"
 
 
-# 새로운 /recipe 엔드포인트 (텍스트 형식 반환)
+# 레시피 텍스트에서 예상 조리 시간을 추출하는 함수 (새로 추가)
+async def estimate_cooking_time(recipe_text: str) -> int:
+    """
+    레시피 텍스트를 분석하여 예상 조리 시간을 분 단위 정수로 반환 (예: 30)
+    """
+    try:
+        prompt = f"""
+        다음 레시피를 보고 예상 조리 시간을 추정해줘.
+        답변은 군더더기 없이 **분 단위의 숫자만** 딱 말해줘.
+        (예시: 1시간 30분 -> 90, 45분 -> 45)
+        
+        [레시피]
+        {recipe_text}
+        """
+        
+        response = model.generate_content(prompt)
+        # 숫자만 추출 (혹시 모를 공백 제거)
+        time_str = response.text.strip()
+        # 숫자 외의 문자가 섞여있을 경우를 대비해 숫자만 필터링하거나 int 변환 시도
+        import re
+        numbers = re.findall(r'\d+', time_str)
+        if numbers:
+            return int(numbers[0])
+        return 0 # 알 수 없음
+        
+    except Exception as e:
+        print(f"❌ 시간 추정 중 에러: {e}")
+        return 0
+
+# 새로운 /recipe 엔드포인트 (시간만 반환)
 class RecipeTextResponse(BaseModel):
-    recipe_text: str
+    estimated_time: int = 0  # 예상 시간 필드 (분 단위 정수)
 
 @app.post("/recipe", response_model=RecipeTextResponse)
 async def get_recipe(request: MenuRequest):
     """
-    레시피를 텍스트 형식으로 반환하는 엔드포인트
+    레시피를 검색하고 예상 조리 시간만 반환하는 엔드포인트
     """
     global current_recipe
     
     try:
         recipe_text = await search_recipe_text(request.menu_name)
         
+        # 예상 시간 계산
+        estimated_time = await estimate_cooking_time(recipe_text)
+        
         # 전역 변수에 저장
         current_recipe = recipe_text
         
         # 서버에서 출력 (테스트용)
         print(f"\n[레시피 결과]\n{recipe_text}\n")
+        print(f"⏱️ 예상 조리 시간: {estimated_time}")
         print(f"{'='*60}\n")
         
-        return {"recipe_text": recipe_text}
+        return {"estimated_time": estimated_time}
     except Exception as e:
         print(f"❌ Error: {e}")
         raise HTTPException(status_code=500, detail="레시피를 가져오는 중 오류가 발생했습니다.")
@@ -142,7 +175,7 @@ async def get_recipe(request: MenuRequest):
 @app.post("/youtube-recipe", response_model=RecipeTextResponse)
 async def get_youtube_recipe(request: YoutubeRequest):
     """
-    유튜브 URL을 받아서 레시피를 텍스트로 반환하는 엔드포인트
+    유튜브 URL을 받아서 레시피를 검색하고 예상 조리 시간만 반환하는 엔드포인트
     """
     global current_recipe
     
@@ -150,14 +183,18 @@ async def get_youtube_recipe(request: YoutubeRequest):
         # search_recipe_video 호출
         recipe_text = await search_recipe_video(request.video_url)
         
+        # 예상 시간 계산
+        estimated_time = await estimate_cooking_time(recipe_text)
+        
         # 전역 변수에 저장
         current_recipe = recipe_text
         
         # 서버에서 출력 (테스트용)
         print(f"\n[유튜브 레시피 결과]\n{recipe_text}\n")
+        print(f"⏱️ 예상 조리 시간: {estimated_time}")
         print(f"{'='*60}\n")
         
-        return {"recipe_text": recipe_text}
+        return {"estimated_time": estimated_time}
     except Exception as e:
         print(f"❌ Error: {e}")
         raise HTTPException(status_code=500, detail="유튜브 레시피를 가져오는 중 오류가 발생했습니다.")
