@@ -1,107 +1,149 @@
 <!DOCTYPE html>
 <html>
-<head>
+  <head>
     <title>Voice Chef AI (Realtime)</title>
     <style>
-        body { font-family: 'Segoe UI'; background-color: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        h1 { color: #333; }
-        #status { margin-top: 20px; padding: 10px; border-radius: 5px; background-color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-weight: bold; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; margin: 10px; }
-        button:hover { background-color: #0056b3; }
-        button:disabled { background-color: #ccc; cursor: not-allowed; }
-        #log { width: 80%; max-width: 600px; height: 300px; overflow-y: scroll; background: white; border: 1px solid #ddd; padding: 10px; margin-top: 20px; border-radius: 5px; }
+      body {
+        font-family: "Segoe UI";
+        background-color: #f0f2f5;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+      }
+      h1 {
+        color: #333;
+      }
+      #status {
+        margin-top: 20px;
+        padding: 10px;
+        border-radius: 5px;
+        background-color: #fff;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        font-weight: bold;
+      }
+      button {
+        padding: 10px 20px;
+        font-size: 16px;
+        cursor: pointer;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        margin: 10px;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+      button:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+      }
+      #log {
+        width: 80%;
+        max-width: 600px;
+        height: 300px;
+        overflow-y: scroll;
+        background: white;
+        border: 1px solid #ddd;
+        padding: 10px;
+        margin-top: 20px;
+        border-radius: 5px;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
+    <h1>⚡ Voice Chef (Realtime API)</h1>
 
-<h1>⚡ Voice Chef (Realtime API)</h1>
+    <div id="controls">
+      <button id="startBtn" onclick="startSession()">Start Conversation</button>
+      <button id="stopBtn" onclick="stopSession()" disabled>Stop</button>
+    </div>
 
-<div id="controls">
-    <button id="startBtn" onclick="startSession()">Start Conversation</button>
-    <button id="stopBtn" onclick="stopSession()" disabled>Stop</button>
-</div>
+    <div id="status">Ready</div>
+    <div id="log"></div>
 
-<div id="status">Ready</div>
-<div id="log"></div>
+    <script>
+      let ws;
+      let audioContext;
+      let processor;
+      let inputSource;
+      let nextStartTime = 0;
 
-<script>
-    let ws;
-    let audioContext;
-    let processor;
-    let inputSource;
-    let nextStartTime = 0;
-
-    function log(message) {
-        const logDiv = document.getElementById('log');
-        const p = document.createElement('p');
+      function log(message) {
+        const logDiv = document.getElementById("log");
+        const p = document.createElement("p");
         p.textContent = message;
         logDiv.appendChild(p);
         logDiv.scrollTop = logDiv.scrollHeight;
-    }
+      }
 
-    async function startSession() {
-        document.getElementById('startBtn').disabled = true;
-        document.getElementById('stopBtn').disabled = false;
-        document.getElementById('status').textContent = "Connecting...";
+      async function startSession() {
+        document.getElementById("startBtn").disabled = true;
+        document.getElementById("stopBtn").disabled = false;
+        document.getElementById("status").textContent = "Connecting...";
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-        ws.binaryType = 'arraybuffer';
+        ws.binaryType = "arraybuffer";
 
         ws.onopen = async () => {
-            log("Connected to Server");
-            document.getElementById('status').textContent = "Connected. Initializing Audio...";
-            await startAudio();
+          log("Connected to Server");
+          document.getElementById("status").textContent =
+            "Connected. Initializing Audio...";
+          await startAudio();
         };
 
         ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
+          const data = JSON.parse(event.data);
 
-            if (data.type === "audio") playAudioChunk(data.data);
-            if (data.type === "text") log("Chef: " + data.data);
+          if (data.type === "audio") playAudioChunk(data.data);
+          if (data.type === "text") log("Chef: " + data.data);
         };
 
         ws.onclose = () => {
-            log("Disconnected");
-            stopSession();
+          log("Disconnected");
+          stopSession();
         };
-    }
+      }
 
-    async function startAudio() {
+      async function startAudio() {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
         const stream = await navigator.mediaDevices.getUserMedia({
-            audio: { channelCount: 1, sampleRate: 24000, echoCancellation: true }
+          audio: { channelCount: 1, sampleRate: 24000, echoCancellation: true },
         });
 
         log("Microphone access granted");
-        document.getElementById('status').textContent = "Listening...";
+        document.getElementById("status").textContent = "Listening...";
 
         inputSource = audioContext.createMediaStreamSource(stream);
         processor = audioContext.createScriptProcessor(4096, 1, 1);
 
         processor.onaudioprocess = (e) => {
-            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+          if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-            const inputData = e.inputBuffer.getChannelData(0);
-            const pcmData = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++)
-                pcmData[i] = inputData[i] * 0x7fff;
+          const inputData = e.inputBuffer.getChannelData(0);
+          const pcmData = new Int16Array(inputData.length);
+          for (let i = 0; i < inputData.length; i++)
+            pcmData[i] = inputData[i] * 0x7fff;
 
-            ws.send(pcmData.buffer);
+          ws.send(pcmData.buffer);
         };
 
         inputSource.connect(processor);
         processor.connect(audioContext.destination);
-    }
+      }
 
-    function playAudioChunk(base64Data) {
+      function playAudioChunk(base64Data) {
         const binary = atob(base64Data);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
         const audioData = new Int16Array(bytes.buffer);
-        const floatData = Float32Array.from(audioData, n => n / 0x8000);
+        const floatData = Float32Array.from(audioData, (n) => n / 0x8000);
 
         const buffer = audioContext.createBuffer(1, floatData.length, 24000);
         buffer.copyToChannel(floatData, 0);
@@ -115,18 +157,17 @@
 
         source.start(nextStartTime);
         nextStartTime += buffer.duration;
-    }
+      }
 
-    function stopSession() {
-        document.getElementById('startBtn').disabled = false;
-        document.getElementById('stopBtn').disabled = true;
+      function stopSession() {
+        document.getElementById("startBtn").disabled = false;
+        document.getElementById("stopBtn").disabled = true;
 
         if (processor) processor.disconnect();
         if (inputSource) inputSource.disconnect();
         if (audioContext) audioContext.close();
         if (ws) ws.close();
-    }
-</script>
-
-</body>
+      }
+    </script>
+  </body>
 </html>

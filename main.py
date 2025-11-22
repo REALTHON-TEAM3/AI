@@ -144,7 +144,7 @@ async def timer_task(seconds: int, client_ws: WebSocket, openai_ws):
         print("[Timer] 종료! 클라이언트로 알림 전송")
         await client_ws.send_json({
             "type": "timer_done",
-            "message": "타이머가 종료되었습니다! 다음 단계로 넘어갈까요?"
+            "message": "타이머가 종료되었습니다!"
         })
 
         await openai_ws.send(json.dumps({
