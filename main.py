@@ -69,9 +69,6 @@ async def get_recipe(request: RecipeRequest):
             status_code=500
         )
 
-
-
-
 # --- 타이머 비동기 함수 ---
 async def timer_task(seconds: int, client_ws: WebSocket):
     print(f"[Timer] {seconds}초 타이머 시작")
@@ -260,5 +257,4 @@ async def websocket_endpoint(client_ws: WebSocket):
         await client_ws.close()
 
 if __name__ == "__main__":
-    get_recipe({"menu_name": "김치찌개"})
-    uvicorn.run(app, host="127.0.0.1", port=8002)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
