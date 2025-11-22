@@ -37,6 +37,9 @@ async def check_api():
 class RecipeRequest(BaseModel):
     menu_name: str
 
+class YoutubeRequest(BaseModel):
+    video_url: str
+
 @app.post("/recipe")
 async def get_recipe(request: RecipeRequest):
     """
@@ -69,6 +72,42 @@ async def get_recipe(request: RecipeRequest):
             {"error": str(e)}, 
             status_code=500
         )
+
+@app.post("/youtube-recipe")
+async def get_youtube_recipe(request: YoutubeRequest):
+    """
+    유튜브 URL로 레시피 생성하고 전역 변수에 저장
+    """
+    try:
+        print(f"\n{'='*60}")
+        print(f"🎥 유튜브 레시피 요청: {request.video_url}")
+        print(f"{'='*60}")
+        
+        # search_service의 함수 호출
+        from api.search_service import search_recipe_video
+        recipe_text = await search_recipe_video(request.video_url)
+        
+        # search_service의 전역 변수에 저장
+        search_service.current_recipe = recipe_text
+        
+        # 서버에서 출력
+        print(f"\n[유튜브 레시피 결과]\n{recipe_text}\n")
+        print(f"{'='*60}\n")
+        
+        return JSONResponse({
+            "success": True,
+            "recipe_text": recipe_text
+        })
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return JSONResponse(
+            {"error": str(e)}, 
+            status_code=500
+        )
+
+
+
 
 # --- 타이머 비동기 함수 ---
 async def timer_task(seconds: int, client_ws: WebSocket):
@@ -258,4 +297,4 @@ async def websocket_endpoint(client_ws: WebSocket):
         await client_ws.close()
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8002)
