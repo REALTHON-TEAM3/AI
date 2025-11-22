@@ -7,8 +7,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 import uvicorn
+from api.search_service import app as recipe_app  # search_service의 FastAPI app import
+from api import search_service  # 전역 변수 접근용
+from pydantic import BaseModel
 
 load_dotenv()
+
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
@@ -27,6 +31,46 @@ async def get():
 @app.get("/check-api")
 async def check_api():
     return JSONResponse({"success": True, "message": "API Key Present"})
+
+
+class RecipeRequest(BaseModel):
+    menu_name: str
+
+@app.post("/recipe")
+async def get_recipe(request: RecipeRequest):
+    """
+    레시피를 생성하고 전역 변수에 저장
+    """
+    try:
+        print(f"\n{'='*60}")
+        print(f"📝 레시피 요청: {request.menu_name}")
+        print(f"{'='*60}")
+        
+        # search_service의 함수 호출
+        from api.search_service import search_recipe_text
+        recipe_text = await search_recipe_text(request.menu_name)
+        
+        # search_service의 전역 변수에 저장
+        search_service.current_recipe = recipe_text
+        
+        # 서버에서 출력
+        print(f"\n[레시피 결과]\n{recipe_text}\n")
+        print(f"{'='*60}\n")
+        
+        return JSONResponse({
+            "success": True,
+            "recipe_text": recipe_text
+        })
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return JSONResponse(
+            {"error": str(e)}, 
+            status_code=500
+        )
+
+
+
 
 # --- 타이머 비동기 함수 ---
 async def timer_task(seconds: int, client_ws: WebSocket):
@@ -115,16 +159,15 @@ async def websocket_endpoint(client_ws: WebSocket):
             }
             await openai_ws.send(json.dumps(session_update))
             
-            recipe_text = """
-            [재료] 신김치 2컵, 돼지고기 200g, 두부 1/2모...
+            # 전역 변수에서 레시피 가져오기
+            recipe_text = search_service.current_recipe or """
+            [재료] 아직 레시피가 선택되지 않았습니다.
             [조리 단계]
-            1. 김치와 고기를 썬다.
-            2. 냄비에 고기를 볶는다.
-            3. 김치를 넣고 3분간 볶는다.
-            4. 양념과 물을 넣고 15분간 끓인다.
-            5. 두부를 넣고 5분간 끓인다.
-            6. 대파를 넣고 완성한다.
+            1. /recipe 엔드포인트로 레시피를 먼저 요청해주세요.
             """
+            
+            # [디버그] 현재 적용된 레시피 확인
+            print(f"\n📢 [WebSocket] 적용된 레시피:\n{recipe_text[:100]}...\n")
             
             recipe_prompt = f""" 
              [레시피]
@@ -217,4 +260,5 @@ async def websocket_endpoint(client_ws: WebSocket):
         await client_ws.close()
 
 if __name__ == "__main__":
+    get_recipe({"menu_name": "김치찌개"})
     uvicorn.run(app, host="127.0.0.1", port=8002)
