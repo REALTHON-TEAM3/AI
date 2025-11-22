@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-GOOGLE_API_KEY = os.getenv("GOOGLE_AI_API")
-genai.configure(api_key=GOOGLE_API_KEY)
+GOOGLE_AI_KEY = os.getenv("GOOGLE_AI_KEY")
+genai.configure(api_key=GOOGLE_AI_KEY)
 
 # 검색 도구 없이 일반 모델 사용 (API 호환성 문제로 인해)
 model = genai.GenerativeModel('gemini-2.5-flash')
@@ -33,7 +33,6 @@ class RecipeResponse(BaseModel):
 
 from utils.youtube_download import recog_video
 
-# ★ 핵심: FastAPI 데코레이터(@app.post)를 없애고 일반 비동기 함수로 변경
 async def search_recipe_text(menu_name: str) -> str:
     """
     레시피를 검색하여 텍스트 형식으로 반환하는 함수

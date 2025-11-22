@@ -12,12 +12,12 @@ logging.basicConfig(level=logging.INFO)
 
 load_dotenv()
 
-GOOGLE_AI_API = os.getenv("GOOGLE_AI_API")
-if not GOOGLE_AI_API:
-    logger.error("GOOGLE_AI_API environment variable not found.")
+GOOGLE_AI_KEY = os.getenv("GOOGLE_AI_KEY")
+if not GOOGLE_AI_KEY:
+    logger.error("GOOGLE_AI_KEY environment variable not found.")
 else:
-    logger.info("GOOGLE_AI_API key is set.")
-    generativeai.configure(api_key=GOOGLE_AI_API)
+    logger.info("GOOGLE_AI_KEY key is set.")
+    generativeai.configure(api_key=GOOGLE_AI_KEY)
 
 # 🔹 여기서는 FastAPI 말고 APIRouter 사용
 router = APIRouter(
@@ -61,7 +61,7 @@ async def get_ingredients_by_menu(request: FoodRequest):
     사용자가 보낸 메뉴명을 기반으로 Gemini에게 재료 목록을 요청하고,
     IngredientResponse 형식에 맞춰 반환합니다.
     """
-    if not GOOGLE_AI_API:
+    if not GOOGLE_AI_KEY:
         raise HTTPException(status_code=500, detail="Google AI API key is not configured.")
 
     try:
@@ -166,8 +166,8 @@ async def get_ingredients_by_menu(request: FoodRequest):
     response_model_by_alias=True,
 )
 async def get_ingredients_by_link(request: LinkRequest):
-    if not GOOGLE_AI_API:
-        raise HTTPException(status_code=500, detail="Google AI API key is not configured.")
+    if not GOOGLE_AI_KEY:
+        raise HTTPException(status_code=500, detail="Google AI KEY is not configured.")
 
     try:
         model = generativeai.GenerativeModel("gemini-2.0-flash")
