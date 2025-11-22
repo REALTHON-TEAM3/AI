@@ -10,7 +10,7 @@ import uvicorn
 from api.search_service import app as recipe_app  # search_service의 FastAPI app import
 from api import search_service  # 전역 변수 접근용
 from pydantic import BaseModel
-
+from api.ingredient_service import router as ingredients_router 
 load_dotenv()
 
 
@@ -20,6 +20,7 @@ if not OPENAI_API_KEY:
 
 app = FastAPI()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app.include_router(ingredients_router)
 
 # Audio Configuration
 SAMPLE_RATE = 24000
@@ -68,9 +69,6 @@ async def get_recipe(request: RecipeRequest):
             {"error": str(e)}, 
             status_code=500
         )
-
-
-
 
 # --- 타이머 비동기 함수 ---
 async def timer_task(seconds: int, client_ws: WebSocket, openai_ws):
@@ -351,5 +349,4 @@ async def websocket_endpoint(client_ws: WebSocket):
         await client_ws.close()
 
 if __name__ == "__main__":
-    get_recipe({"menu_name": "김치찌개"})
-    uvicorn.run(app, host="127.0.0.1", port=8002)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
