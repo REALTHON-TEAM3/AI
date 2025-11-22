@@ -16,6 +16,9 @@ model = genai.GenerativeModel('gemini-2.5-flash')
 # FastAPI 애플리케이션 인스턴스 생성 (새로 추가)
 app = FastAPI()
 
+# 레시피 저장용 전역 변수 (main.py에서 접근 가능)
+current_recipe = None
+
 # Pydantic 모델 정의 (새로 추가)
 class MenuRequest(BaseModel):
     menu_name: str
@@ -74,10 +77,21 @@ async def get_recipe(request: MenuRequest):
     """
     레시피를 텍스트 형식으로 반환하는 엔드포인트
     """
+    global current_recipe
+    
     try:
         recipe_text = await search_recipe_text(request.menu_name)
+        
+        # 전역 변수에 저장
+        current_recipe = recipe_text
+        
+        # 서버에서 출력 (테스트용)
+        print(f"\n[레시피 결과]\n{recipe_text}\n")
+        print(f"{'='*60}\n")
+        
         return {"recipe_text": recipe_text}
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"❌ Error: {e}")
         raise HTTPException(status_code=500, detail="레시피를 가져오는 중 오류가 발생했습니다.")
+
 
