@@ -9,3 +9,5 @@ soundfile==0.13.1
 pytest==9.0.1
 google-generativeai==0.8.5
 google-genai
+pytubefix
+ipython
