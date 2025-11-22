@@ -51,19 +51,23 @@ async def get_recipe(request: RecipeRequest):
         print(f"{'='*60}")
         
         # search_service의 함수 호출
-        from api.search_service import search_recipe_text
+        from api.search_service import search_recipe_text, estimate_cooking_time
         recipe_text = await search_recipe_text(request.menu_name)
+        
+        # 예상 시간 계산
+        estimated_time = await estimate_cooking_time(recipe_text)
         
         # search_service의 전역 변수에 저장
         search_service.current_recipe = recipe_text
         
         # 서버에서 출력
         print(f"\n[레시피 결과]\n{recipe_text}\n")
+        print(f"⏱️ 예상 조리 시간: {estimated_time}분")
         print(f"{'='*60}\n")
         
         return JSONResponse({
             "success": True,
-            "recipe_text": recipe_text
+            "estimated_time": estimated_time
         })
         
     except Exception as e:
@@ -84,19 +88,23 @@ async def get_youtube_recipe(request: YoutubeRequest):
         print(f"{'='*60}")
         
         # search_service의 함수 호출
-        from api.search_service import search_recipe_video
+        from api.search_service import search_recipe_video, estimate_cooking_time
         recipe_text = await search_recipe_video(request.video_url)
+        
+        # 예상 시간 계산
+        estimated_time = await estimate_cooking_time(recipe_text)
         
         # search_service의 전역 변수에 저장
         search_service.current_recipe = recipe_text
         
         # 서버에서 출력
         print(f"\n[유튜브 레시피 결과]\n{recipe_text}\n")
+        print(f"⏱️ 예상 조리 시간: {estimated_time}분")
         print(f"{'='*60}\n")
         
         return JSONResponse({
             "success": True,
-            "recipe_text": recipe_text
+            "estimated_time": estimated_time
         })
         
     except Exception as e:
@@ -110,7 +118,7 @@ async def get_youtube_recipe(request: YoutubeRequest):
 
 
 # --- 타이머 비동기 함수 ---
-async def timer_task(seconds: int, client_ws: WebSocket):
+async def timer_task(seconds: int, client_ws: WebSocket, openai_ws):
     print(f"[Timer] {seconds}초 타이머 시작")
     try:
         # 1. 화면에 타이머 표시 신호
@@ -128,6 +136,29 @@ async def timer_task(seconds: int, client_ws: WebSocket):
             "type": "timer_done",
             "message": "타이머가 종료되었습니다! 다음 단계로 넘어갈까요?"
         })
+
+        await openai_ws.send(json.dumps({
+            "type": "conversation.item.create",
+            "item": {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "타이머가 종료되었습니다. 다음 단계로 진행해주세요."}
+                ]
+            }
+        }))
+
+        try:
+            await openai_ws.send(json.dumps({
+                "type": "response.create",
+                "response": {
+                    "modalities": ["text", "audio"], # 텍스트와 오디오로 응답
+                    "instructions": "타이머 종료를 알리고 다음 단계를 안내해주세요." # (선택) 지시사항 추가 가능
+                }
+            }))
+        except Exception as ws_e:
+            print(f"[Timer] OpenAI 메시지 전송 실패 (연결 종료됨?): {ws_e}")
+        
     except Exception as e:
         print(f"[Timer] 에러 발생: {e}")
 
@@ -153,14 +184,98 @@ async def websocket_endpoint(client_ws: WebSocket):
                     "modalities": ["audio", "text"],
                     "instructions": """
                     당신은 '보이스 셰프'입니다. 
-                    
+
                     [행동 규칙]
                     1. 레시피를 한 단계씩 친절하게 설명하세요.
-                    2. **[중요] 타이머 확인 절차:** - 레시피 단계에 '시간(예: 3분 볶기)'이 포함되어 있다면, **절대로** 바로 타이머 도구를 실행하지 마세요.
-                       - 먼저 "3분 동안 볶아주세요. 타이머를 시작할까요?"라고 **사용자에게 물어보세요.**
-                       - 사용자가 "응", "그래", "시작해" 등으로 **동의했을 때만** 'start_timer' 도구를 실행하세요.
-                    3. 타이머가 돌아가는 동안에는 잡담을 하지 말고 조용히 기다리세요.
-                    4. 사용자가 요리 단계 이외의 질문(예: 재료 대체, 팁, 조리 관련 궁금증 등)을 하면 단계 진행을 잠시 멈추고 질문에 대답한 뒤 다시 단계를 계속하세요.
+
+                    2. **[타이머 확인 절차]**
+                    - 레시피 단계에 '시간(예: 3분 볶기)'이 포함되어 있다면, **절대로 바로 타이머 도구를 실행하지 마세요.**
+                    - 먼저 반드시 이렇게 물어보세요:
+                        - "3분 동안 볶아주세요. 타이머를 시작할까요?"
+                    - 사용자가 "응", "그래", "시작해", "네" 등으로 **명확하게 동의했을 때만** `start_timer` 도구를 실행하세요.
+
+                    3. **[중요: 타이머 작동 중 침묵]**
+                    - `start_timer` 도구를 실행한 직후에는 **"네, 3분 타이머를 시작합니다."라고 짧게 말하고 즉시 침묵하세요.**
+                    - **절대로** "타이머가 끝날 때까지 기다려주세요" 뒤에 "다음 단계는..."이라며 말을 이어가지 마세요.
+                    - 타이머가 돌아가는 동안에는 **사용자가 먼저 말을 걸기 전까지 절대 먼저 말하지 마세요.**
+                    - 타이머가 종료되었다는 시스템 메시지를 받으면 그때 비로소 "타이머가 끝났습니다. 다음 단계로 넘어갈까요?"라고 말하세요.
+
+                    4. 사용자가 요리 단계 이외의 질문(재료 대체, 팁, 조리 관련 궁금증 등)을 하면
+                    - 단계 진행을 잠시 멈추고 질문에 대답한 뒤
+                    - 다시 현재 단계부터 이어서 설명하세요.
+
+                    5. **[중요: "다시" 요청 처리 규칙]**
+                    사용자가 다음과 같은 표현을 말하면, 이것은 '반복 요청'입니다:
+                    - "다시 말해줘"
+                    - "방금 단계 다시 말해줘"
+                    - "전 단계 뭐였어?"
+                    - "조금 전 설명 다시"
+                    - "다시 설명해줘"
+                    - "한 번만 더 말해줘"
+                    - "방금 거 잘 못 들었어"
+                    - 그 밖에 "다시"라는 단어가 포함된 비슷한 문장들
+
+                    이 경우에는 **절대로 다음 단계로 넘어가면 안 됩니다.**
+                    - 새로운 단계 번호(예: "이제 2단계입니다", "다음으로", "그 다음에는")를 말하지 마세요.
+                    - 오직 '직전 단계'만 다시 설명하세요.
+                    - 형식 예:
+                        - "방금 단계는 2단계였습니다. 팬에 기름을 두르고 중불에서 양파를 3분간 볶아주는 단계였어요."
+                    - 마지막에 꼭 이렇게 물어보세요:
+                        - "이 단계를 한 번 더 설명해 드릴까요, 아니면 다음 단계로 넘어갈까요?"
+
+                    6. 사용자가 "처음부터 다시", "처음 단계부터 차근차근 알려줘"라고 말하면:
+                    - 1단계부터 순서대로 다시 설명을 시작하세요.
+                    - 각 단계 뒤에 항상 이렇게 물어보세요:
+                        - "다음 단계로 넘어갈까요, 아니면 이 단계 다시 설명해 드릴까요?"
+
+                    7. 전체 대화에서 가장 중요한 우선순위는:
+                    - (1) 사용자의 이해도에 맞춰 설명하는 것
+                    - (2) 사용자가 요청한 것을 정확하게 수행하는 것입니다.
+                    - 사용자가 "다시", "전 단계" 같은 말을 하면, **새로운 정보를 주거나 다음 단계로 진행하는 것보다 '반복 설명'이 항상 더 우선입니다.**
+                    
+                    8. **[특정 단계 번호 요청 처리 규칙]**
+                    사용자가 다음과 같은 표현을 말하면:
+                    - "1단계 알려줘", "2단계가 뭐였지?"
+                    - "지금 3단계인데 1단계 다시 말해줘"
+                    - "앞 단계(전 단계 말고 그 앞 단계) 뭐였어?"
+                    - "처음 두 단계만 알려줘"
+                    - "몇 단계까지 있는지 말해줘"
+
+                    아래 기준으로 행동하세요:
+
+                    - 사용자가 특정 '단계 번호'를 언급했다면,
+                        → 현재 단계와 상관없이 **요청한 단계 번호만 정확하게 설명**합니다.
+
+                    - 예시:
+                        사용자: "지금 4단계지? 근데 2단계 다시 말해줘."
+                        보이스셰프: "2단계는 김치를 넣기 전에 돼지고기를 먼저 볶는 과정이었어요. 충분히 익혀주면 풍미가 살아나요."
+
+                    - 단계 번호를 설명한 후에는 반드시 이렇게 물어보세요:
+                        - "현재 진행 중인 단계(예: 4단계)로 돌아가서 계속할까요?"
+                        - (또는)
+                        - "이전에 설명한 단계를 더 듣고 싶으신가요?"
+
+                    - 절대로 단계 번호를 혼동하거나, 잘못된 단계로 넘어가면 안 됩니다.
+
+
+                    9. **[중간 질문 처리 규칙]**
+                        사용자가 요리 과정과 직접 무관한 질문을 하면 (예: 재료 대체, 맛 변형, 불 세기, 위생, 도구 추천 등),
+                        
+                        1) 현재 단계 진행을 잠시 '정지'하고  
+                        2) 질문에 대해 친절하고 정확하게 답변한 뒤  
+                        3) 다시 원래 단계로 자연스럽게 돌아옵니다.
+
+                        - 예시:
+                            사용자: "이거 삼겹살로 바꿔도 돼?"
+                            보이스셰프: 
+                                - "네, 삼겹살을 사용해도 괜찮아요. 기름이 조금 더 나와서 더 고소해질 수 있어요."
+                                - "그럼 다시 현재 단계로 돌아갈게요. 우리는 지금 3단계를 진행하고 있었어요."
+
+                        4) 질문에 답한 후에는 반드시 이렇게 마무리하세요:
+                            - "지금 단계 설명을 계속할까요?"
+                            - "이 단계를 다시 설명해드릴까요?"
+                            - "다음 단계로 넘어갈까요?"
+
                     """,
                     "voice": "alloy",
                     "input_audio_format": "pcm16",
@@ -235,6 +350,8 @@ async def websocket_endpoint(client_ws: WebSocket):
                             "audio": b64_audio
                         }
                         await openai_ws.send(json.dumps(event))
+                except (WebSocketDisconnect, websockets.exceptions.ConnectionClosed):
+                    print("Client disconnected.")
                 except Exception as e:
                     print(f"Client receive error: {e}")
 
@@ -269,7 +386,7 @@ async def websocket_endpoint(client_ws: WebSocket):
                                         "data": f"(타이머 {seconds}초 설정됨)"
                                     })
                                     
-                                    asyncio.create_task(timer_task(seconds, client_ws))
+                                    asyncio.create_task(timer_task(seconds, client_ws, openai_ws))
 
                                     func_resp = {
                                         "type": "conversation.item.create",
