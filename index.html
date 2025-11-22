@@ -1,231 +1,360 @@
 <!DOCTYPE html>
 <html>
-   <head>
-       <title>Voice Chef AI (Realtime)</title>
-       <style>
-           body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-           h1 { color: #333; }
-           /* --- [추가] 타이머 디자인 --- */
-           #timer-display {
-               font-size: 4rem;
-               font-weight: bold;
-               color: #ff4757;
-               margin: 20px 0;
-               font-variant-numeric: tabular-nums; /* 숫자가 흔들리지 않게 고정 */
-               display: none; /* 평소에는 숨김 */
-           }
-           #status { margin-top: 20px; padding: 10px; border-radius: 5px; background-color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-weight: bold; }
-           button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; margin: 10px; transition: background-color 0.3s; }
-           button:hover { background-color: #0056b3; }
-           button:disabled { background-color: #ccc; cursor: not-allowed; }
-           #log { width: 80%; max-width: 600px; height: 300px; overflow-y: scroll; background: white; border: 1px solid #ddd; padding: 10px; margin-top: 20px; border-radius: 5px; font-size: 14px; }
-       </style>
-   </head>
-   <body>
-       <h1>⚡ Voice Chef (Realtime API)</h1>
-       
-       <div id="timer-display">00:00</div>
+  <head>
+    <title>Voice Chef AI (Realtime)</title>
+    <style>
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f0f2f5;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+      }
+      h1 {
+        color: #333;
+      }
+      /* --- [추가] 타이머 디자인 --- */
+      #timer-display {
+        font-size: 4rem;
+        font-weight: bold;
+        color: #ff4757;
+        margin: 20px 0;
+        font-variant-numeric: tabular-nums; /* 숫자가 흔들리지 않게 고정 */
+        display: none; /* 평소에는 숨김 */
+      }
+      /* --- [추가] 레시피 검색 디자인 --- */
+      #recipe-section {
+        margin-bottom: 20px;
+        display: flex;
+        gap: 10px;
+      }
+      input {
+        padding: 10px;
+        font-size: 16px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        width: 200px;
+      }
+      #status {
+        margin-top: 20px;
+        padding: 10px;
+        border-radius: 5px;
+        background-color: #fff;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        font-weight: bold;
+      }
+      button {
+        padding: 10px 20px;
+        font-size: 16px;
+        cursor: pointer;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        margin: 10px;
+        transition: background-color 0.3s;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+      button:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+      }
+      #log {
+        width: 80%;
+        max-width: 600px;
+        height: 300px;
+        overflow-y: scroll;
+        background: white;
+        border: 1px solid #ddd;
+        padding: 10px;
+        margin-top: 20px;
+        border-radius: 5px;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>⚡ Voice Chef (Realtime API)</h1>
 
-       <div id="controls">
-           <button id="startBtn" onclick="startSession()">Start Conversation</button>
-           <button id="stopBtn" onclick="stopSession()" disabled>Stop</button>
-       </div>
-       <div id="status">Ready</div>
-       <div id="log"></div>
+    <!-- 레시피 검색 섹션 -->
+    <div id="recipe-section">
+      <input
+        type="text"
+        id="menuInput"
+        placeholder="요리 이름 (예: 김치찌개)"
+      />
+      <button onclick="searchRecipe()">레시피 설정</button>
+    </div>
 
-       <script>
-           let ws;
-           let audioContext;
-           let processor;
-           let inputSource;
-           let isRecording = false;
-           let nextStartTime = 0;
-           let timerInterval = null; // 타이머 인터벌 변수
+    <div id="timer-display">00:00</div>
 
-           function log(message) {
-               const logDiv = document.getElementById('log');
-               const p = document.createElement('p');
-               p.textContent = message;
-               logDiv.appendChild(p);
-               logDiv.scrollTop = logDiv.scrollHeight;
-           }
+    <div id="controls">
+      <button id="startBtn" onclick="startSession()">Start Conversation</button>
+      <button id="stopBtn" onclick="stopSession()" disabled>Stop</button>
+    </div>
+    <div id="status">Ready</div>
+    <div id="log"></div>
 
-           function speakAlert(text) {
-               if ('speechSynthesis' in window) {
-                   const utterance = new SpeechSynthesisUtterance(text);
-                   utterance.lang = 'ko-KR';
-                   utterance.rate = 1.0;
-                   window.speechSynthesis.speak(utterance);
-               } else {
-                   alert(text);
-               }
-           }
+    <script>
+      let ws;
+      let audioContext;
+      let processor;
+      let inputSource;
+      let isRecording = false;
+      let nextStartTime = 0;
+      let timerInterval = null; // 타이머 인터벌 변수
 
-           // --- [추가] 타이머 카운트다운 함수 ---
-           function startCountdown(durationSeconds) {
-               const display = document.getElementById('timer-display');
-               display.style.display = 'block'; // 타이머 보이기
-               
-               let timer = durationSeconds;
-               
-               // 기존 타이머가 있다면 제거
-               if (timerInterval) clearInterval(timerInterval);
+      // --- [추가] 레시피 검색 함수 ---
+      async function searchRecipe() {
+        const menuName = document.getElementById("menuInput").value;
+        if (!menuName) {
+          alert("요리 이름을 입력해주세요!");
+          return;
+        }
 
-               updateDisplay(timer);
+        log(`🔍 레시피 검색 중: ${menuName}...`);
 
-               timerInterval = setInterval(function () {
-                   timer--;
-                   updateDisplay(timer);
+        try {
+          const response = await fetch("/recipe", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ menu_name: menuName }),
+          });
 
-                   if (timer <= 0) {
-                       clearInterval(timerInterval);
-                       display.textContent = "Done!";
-                       setTimeout(() => { display.style.display = 'none'; }, 5000); // 5초 뒤 숨김
-                   }
-               }, 1000);
-           }
+          const result = await response.json();
 
-           function updateDisplay(seconds) {
-               const display = document.getElementById('timer-display');
-               const minutes = parseInt(seconds / 60, 10);
-               const secs = parseInt(seconds % 60, 10);
-               
-               display.textContent = 
-                   (minutes < 10 ? "0" + minutes : minutes) + ":" + 
-                   (secs < 10 ? "0" + secs : secs);
-           }
+          if (response.ok) {
+            log("✅ 레시피 설정 완료!");
+            log("--------------------------------");
+            log(result.recipe_text); // 레시피 내용 로그에 출력
+            log("--------------------------------");
+            alert(
+              "레시피가 설정되었습니다. 이제 'Start Conversation'을 눌러 요리를 시작하세요!"
+            );
+          } else {
+            log(`❌ 에러: ${result.error}`);
+            alert("레시피를 가져오는데 실패했습니다.");
+          }
+        } catch (error) {
+          log(`❌ 네트워크 에러: ${error}`);
+          alert("서버 연결에 실패했습니다.");
+        }
+      }
 
-           async function startSession() {
-               document.getElementById('startBtn').disabled = true;
-               document.getElementById('stopBtn').disabled = false;
-               document.getElementById('status').textContent = "Connecting...";
+      function log(message) {
+        const logDiv = document.getElementById("log");
+        const p = document.createElement("p");
+        p.textContent = message;
+        logDiv.appendChild(p);
+        logDiv.scrollTop = logDiv.scrollHeight;
+      }
 
-               const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-               ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-               ws.binaryType = 'arraybuffer';
+      function speakAlert(text) {
+        if ("speechSynthesis" in window) {
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.lang = "ko-KR";
+          utterance.rate = 1.0;
+          window.speechSynthesis.speak(utterance);
+        } else {
+          alert(text);
+        }
+      }
 
-               ws.onopen = async () => {
-                   log("Connected to Server");
-                   document.getElementById('status').textContent = "Connected. Initializing Audio...";
-                   await startAudio();
-               };
+      // --- [추가] 타이머 카운트다운 함수 ---
+      function startCountdown(durationSeconds) {
+        const display = document.getElementById("timer-display");
+        display.style.display = "block"; // 타이머 보이기
 
-               ws.onmessage = async (event) => {
-                   const data = JSON.parse(event.data);
-                  
-                   if (data.type === 'audio') {
-                       playAudioChunk(data.data);
-                   } else if (data.type === 'text') {
-                       log("Chef: " + data.data);
-                   } else if (data.type === 'timer_start') {
-                       // --- [추가] 타이머 시작 신호 받음 ---
-                       log(`⏰ ${data.seconds}초 타이머 시작`);
-                       startCountdown(data.seconds);
-                   } else if (data.type === 'timer_done') { 
-                       log("⏰ " + data.message);
-                       speakAlert(data.message);
-                   } else if (data.type === 'error') {
-                       log("Error: " + data.data);
-                   }
-               };
+        let timer = durationSeconds;
 
-               ws.onclose = () => {
-                   log("Connection closed");
-                   stopSession();
-               };
-           }
+        // 기존 타이머가 있다면 제거
+        if (timerInterval) clearInterval(timerInterval);
 
-           async function startAudio() {
-               try {
-                   if (!audioContext) {
-                       audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                   }
-                   if (audioContext.state === 'suspended') {
-                       await audioContext.resume();
-                   }
+        updateDisplay(timer);
 
-                   const stream = await navigator.mediaDevices.getUserMedia({ audio: {
-                       channelCount: 1,
-                       sampleRate: 24000,
-                       echoCancellation: true
-                   }});
+        timerInterval = setInterval(function () {
+          timer--;
+          updateDisplay(timer);
 
-                   log("Microphone access granted");
-                   document.getElementById('status').textContent = "Listening... (Speak now)";
+          if (timer <= 0) {
+            clearInterval(timerInterval);
+            display.textContent = "Done!";
+            setTimeout(() => {
+              display.style.display = "none";
+            }, 5000); // 5초 뒤 숨김
+          }
+        }, 1000);
+      }
 
-                   inputSource = audioContext.createMediaStreamSource(stream);
-                   processor = audioContext.createScriptProcessor(4096, 1, 1);
-                  
-                   processor.onaudioprocess = (e) => {
-                       if (!ws || ws.readyState !== WebSocket.OPEN) return;
-                       const inputData = e.inputBuffer.getChannelData(0);
-                       const pcmData = new Int16Array(inputData.length);
-                       for (let i = 0; i < inputData.length; i++) {
-                           const s = Math.max(-1, Math.min(1, inputData[i]));
-                           pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-                       }
-                       ws.send(pcmData.buffer);
-                   };
+      function updateDisplay(seconds) {
+        const display = document.getElementById("timer-display");
+        const minutes = parseInt(seconds / 60, 10);
+        const secs = parseInt(seconds % 60, 10);
 
-                   inputSource.connect(processor);
-                   processor.connect(audioContext.destination);
-                   isRecording = true;
+        display.textContent =
+          (minutes < 10 ? "0" + minutes : minutes) +
+          ":" +
+          (secs < 10 ? "0" + secs : secs);
+      }
 
-               } catch (err) {
-                   log("Audio Error: " + err);
-                   stopSession();
-               }
-           }
+      async function startSession() {
+        document.getElementById("startBtn").disabled = true;
+        document.getElementById("stopBtn").disabled = false;
+        document.getElementById("status").textContent = "Connecting...";
 
-           function playAudioChunk(base64Data) {
-               if (!audioContext) return;
-               try {
-                   const binaryString = window.atob(base64Data);
-                   const len = binaryString.length;
-                   const bytes = new Uint8Array(len);
-                   for (let i = 0; i < len; i++) {
-                       bytes[i] = binaryString.charCodeAt(i);
-                   }
-                   const int16Data = new Int16Array(bytes.buffer);
-                   const float32Data = new Float32Array(int16Data.length);
-                   for (let i = 0; i < int16Data.length; i++) {
-                       float32Data[i] = int16Data[i] / 0x8000;
-                   }
-                   const buffer = audioContext.createBuffer(1, float32Data.length, 24000);
-                   buffer.getChannelData(0).set(float32Data);
-                   const source = audioContext.createBufferSource();
-                   source.buffer = buffer;
-                   source.connect(audioContext.destination);
-                   const currentTime = audioContext.currentTime;
-                   if (nextStartTime < currentTime) {
-                       nextStartTime = currentTime;
-                   }
-                   source.start(nextStartTime);
-                   nextStartTime += buffer.duration;
-                   source.onended = () => {
-                        if (audioContext.currentTime >= nextStartTime) {
-                            document.getElementById('status').textContent = "Listening...";
-                        }
-                   };
-               } catch (e) {
-                   log("Playback Error: " + e);
-               }
-           }
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+        ws.binaryType = "arraybuffer";
 
-           function stopSession() {
-               document.getElementById('startBtn').disabled = false;
-               document.getElementById('stopBtn').disabled = true;
-               document.getElementById('status').textContent = "Stopped";
-               // 타이머 인터벌 정지
-               if (timerInterval) clearInterval(timerInterval);
-               document.getElementById('timer-display').style.display = 'none';
+        ws.onopen = async () => {
+          log("Connected to Server");
+          document.getElementById("status").textContent =
+            "Connected. Initializing Audio...";
+          await startAudio();
+        };
 
-               if (processor) { processor.disconnect(); processor = null; }
-               if (inputSource) { inputSource.disconnect(); inputSource = null; }
-               if (audioContext) { audioContext.close(); audioContext = null; }
-               if (ws) { ws.close(); ws = null; }
-               isRecording = false;
-           }
-       </script>
-   </body>
+        ws.onmessage = async (event) => {
+          const data = JSON.parse(event.data);
+
+          if (data.type === "audio") {
+            playAudioChunk(data.data);
+          } else if (data.type === "text") {
+            log("Chef: " + data.data);
+          } else if (data.type === "timer_start") {
+            // --- [추가] 타이머 시작 신호 받음 ---
+            log(`⏰ ${data.seconds}초 타이머 시작`);
+            startCountdown(data.seconds);
+          } else if (data.type === "timer_done") {
+            log("⏰ " + data.message);
+            speakAlert(data.message);
+          } else if (data.type === "error") {
+            log("Error: " + data.data);
+          }
+        };
+
+        ws.onclose = () => {
+          log("Connection closed");
+          stopSession();
+        };
+      }
+
+      async function startAudio() {
+        try {
+          if (!audioContext) {
+            audioContext = new (window.AudioContext ||
+              window.webkitAudioContext)();
+          }
+          if (audioContext.state === "suspended") {
+            await audioContext.resume();
+          }
+
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              channelCount: 1,
+              sampleRate: 24000,
+              echoCancellation: true,
+            },
+          });
+
+          log("Microphone access granted");
+          document.getElementById("status").textContent =
+            "Listening... (Speak now)";
+
+          inputSource = audioContext.createMediaStreamSource(stream);
+          processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+          processor.onaudioprocess = (e) => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            const inputData = e.inputBuffer.getChannelData(0);
+            const pcmData = new Int16Array(inputData.length);
+            for (let i = 0; i < inputData.length; i++) {
+              const s = Math.max(-1, Math.min(1, inputData[i]));
+              pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+            }
+            ws.send(pcmData.buffer);
+          };
+
+          inputSource.connect(processor);
+          processor.connect(audioContext.destination);
+          isRecording = true;
+        } catch (err) {
+          log("Audio Error: " + err);
+          stopSession();
+        }
+      }
+
+      function playAudioChunk(base64Data) {
+        if (!audioContext) return;
+        try {
+          const binaryString = window.atob(base64Data);
+          const len = binaryString.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const int16Data = new Int16Array(bytes.buffer);
+          const float32Data = new Float32Array(int16Data.length);
+          for (let i = 0; i < int16Data.length; i++) {
+            float32Data[i] = int16Data[i] / 0x8000;
+          }
+          const buffer = audioContext.createBuffer(
+            1,
+            float32Data.length,
+            24000
+          );
+          buffer.getChannelData(0).set(float32Data);
+          const source = audioContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(audioContext.destination);
+          const currentTime = audioContext.currentTime;
+          if (nextStartTime < currentTime) {
+            nextStartTime = currentTime;
+          }
+          source.start(nextStartTime);
+          nextStartTime += buffer.duration;
+          source.onended = () => {
+            if (audioContext.currentTime >= nextStartTime) {
+              document.getElementById("status").textContent = "Listening...";
+            }
+          };
+        } catch (e) {
+          log("Playback Error: " + e);
+        }
+      }
+
+      function stopSession() {
+        document.getElementById("startBtn").disabled = false;
+        document.getElementById("stopBtn").disabled = true;
+        document.getElementById("status").textContent = "Stopped";
+        // 타이머 인터벌 정지
+        if (timerInterval) clearInterval(timerInterval);
+        document.getElementById("timer-display").style.display = "none";
+
+        if (processor) {
+          processor.disconnect();
+          processor = null;
+        }
+        if (inputSource) {
+          inputSource.disconnect();
+          inputSource = null;
+        }
+        if (audioContext) {
+          audioContext.close();
+          audioContext = null;
+        }
+        if (ws) {
+          ws.close();
+          ws = null;
+        }
+        isRecording = false;
+      }
+    </script>
+  </body>
 </html>
