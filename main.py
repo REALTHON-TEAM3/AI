@@ -10,7 +10,7 @@ import uvicorn
 from api.search_service import app as recipe_app  # search_service의 FastAPI app import
 from api import search_service  # 전역 변수 접근용
 from pydantic import BaseModel
-
+from api.ingredient_service import router as ingredients_router 
 load_dotenv()
 
 
@@ -20,6 +20,7 @@ if not OPENAI_API_KEY:
 
 app = FastAPI()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app.include_router(ingredients_router)
 
 # Audio Configuration
 SAMPLE_RATE = 24000

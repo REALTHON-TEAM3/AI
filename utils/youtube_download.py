@@ -25,10 +25,6 @@ def download_youtube(url: str) -> str | None:
         raise
 
 def recog_video(prompt: str, url: str, model: genai.GenerativeModel, generation_config: dict) -> str:
-    """
-    Downloads a video, sends it to Gemini, and returns the full, concatenated response.
-    Cleans up the downloaded file afterwards.
-    """
     file_path = None
     uploaded_file = None
     try:
@@ -37,7 +33,6 @@ def recog_video(prompt: str, url: str, model: genai.GenerativeModel, generation_
             raise ValueError("Failed to download video.")
 
         logger.info(f"Uploading file to Gemini: {file_path}")
-        # Wait until the file is usable
         for _ in range(5):
             try:
                 uploaded_file = genai.upload_file(path=file_path)
