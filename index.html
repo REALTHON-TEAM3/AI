@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+   <head>
+       <title>Voice Chef AI (Realtime)</title>
+       <style>
+           body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+           h1 { color: #333; }
+           /* --- [추가] 타이머 디자인 --- */
+           #timer-display {
+               font-size: 4rem;
+               font-weight: bold;
+               color: #ff4757;
+               margin: 20px 0;
+               font-variant-numeric: tabular-nums; /* 숫자가 흔들리지 않게 고정 */
+               display: none; /* 평소에는 숨김 */
+           }
+           #status { margin-top: 20px; padding: 10px; border-radius: 5px; background-color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-weight: bold; }
+           button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; margin: 10px; transition: background-color 0.3s; }
+           button:hover { background-color: #0056b3; }
+           button:disabled { background-color: #ccc; cursor: not-allowed; }
+           #log { width: 80%; max-width: 600px; height: 300px; overflow-y: scroll; background: white; border: 1px solid #ddd; padding: 10px; margin-top: 20px; border-radius: 5px; font-size: 14px; }
+       </style>
+   </head>
+   <body>
+       <h1>⚡ Voice Chef (Realtime API)</h1>
+       
+       <div id="timer-display">00:00</div>
+
+       <div id="controls">
+           <button id="startBtn" onclick="startSession()">Start Conversation</button>
+           <button id="stopBtn" onclick="stopSession()" disabled>Stop</button>
+       </div>
+       <div id="status">Ready</div>
+       <div id="log"></div>
+
+       <script>
+           let ws;
+           let audioContext;
+           let processor;
+           let inputSource;
+           let isRecording = false;
+           let nextStartTime = 0;
+           let timerInterval = null; // 타이머 인터벌 변수
+
+           function log(message) {
+               const logDiv = document.getElementById('log');
+               const p = document.createElement('p');
+               p.textContent = message;
+               logDiv.appendChild(p);
+               logDiv.scrollTop = logDiv.scrollHeight;
+           }
+
+           function speakAlert(text) {
+               if ('speechSynthesis' in window) {
+                   const utterance = new SpeechSynthesisUtterance(text);
+                   utterance.lang = 'ko-KR';
+                   utterance.rate = 1.0;
+                   window.speechSynthesis.speak(utterance);
+               } else {
+                   alert(text);
+               }
+           }
+
+           // --- [추가] 타이머 카운트다운 함수 ---
+           function startCountdown(durationSeconds) {
+               const display = document.getElementById('timer-display');
+               display.style.display = 'block'; // 타이머 보이기
+               
+               let timer = durationSeconds;
+               
+               // 기존 타이머가 있다면 제거
+               if (timerInterval) clearInterval(timerInterval);
+
+               updateDisplay(timer);
+
+               timerInterval = setInterval(function () {
+                   timer--;
+                   updateDisplay(timer);
+
+                   if (timer <= 0) {
+                       clearInterval(timerInterval);
+                       display.textContent = "Done!";
+                       setTimeout(() => { display.style.display = 'none'; }, 5000); // 5초 뒤 숨김
+                   }
+               }, 1000);
+           }
+
+           function updateDisplay(seconds) {
+               const display = document.getElementById('timer-display');
+               const minutes = parseInt(seconds / 60, 10);
+               const secs = parseInt(seconds % 60, 10);
+               
+               display.textContent = 
+                   (minutes < 10 ? "0" + minutes : minutes) + ":" + 
+                   (secs < 10 ? "0" + secs : secs);
+           }
+
+           async function startSession() {
+               document.getElementById('startBtn').disabled = true;
+               document.getElementById('stopBtn').disabled = false;
+               document.getElementById('status').textContent = "Connecting...";
+
+               const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+               ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+               ws.binaryType = 'arraybuffer';
+
+               ws.onopen = async () => {
+                   log("Connected to Server");
+                   document.getElementById('status').textContent = "Connected. Initializing Audio...";
+                   await startAudio();
+               };
+
+               ws.onmessage = async (event) => {
+                   const data = JSON.parse(event.data);
+                  
+                   if (data.type === 'audio') {
+                       playAudioChunk(data.data);
+                   } else if (data.type === 'text') {
+                       log("Chef: " + data.data);
+                   } else if (data.type === 'timer_start') {
+                       // --- [추가] 타이머 시작 신호 받음 ---
+                       log(`⏰ ${data.seconds}초 타이머 시작`);
+                       startCountdown(data.seconds);
+                   } else if (data.type === 'timer_done') { 
+                       log("⏰ " + data.message);
+                       speakAlert(data.message);
+                   } else if (data.type === 'error') {
+                       log("Error: " + data.data);
+                   }
+               };
+
+               ws.onclose = () => {
+                   log("Connection closed");
+                   stopSession();
+               };
+           }
+
+           async function startAudio() {
+               try {
+                   if (!audioContext) {
+                       audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                   }
+                   if (audioContext.state === 'suspended') {
+                       await audioContext.resume();
+                   }
+
+                   const stream = await navigator.mediaDevices.getUserMedia({ audio: {
+                       channelCount: 1,
+                       sampleRate: 24000,
+                       echoCancellation: true
+                   }});
+
+                   log("Microphone access granted");
+                   document.getElementById('status').textContent = "Listening... (Speak now)";
+
+                   inputSource = audioContext.createMediaStreamSource(stream);
+                   processor = audioContext.createScriptProcessor(4096, 1, 1);
+                  
+                   processor.onaudioprocess = (e) => {
+                       if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                       const inputData = e.inputBuffer.getChannelData(0);
+                       const pcmData = new Int16Array(inputData.length);
+                       for (let i = 0; i < inputData.length; i++) {
+                           const s = Math.max(-1, Math.min(1, inputData[i]));
+                           pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                       }
+                       ws.send(pcmData.buffer);
+                   };
+
+                   inputSource.connect(processor);
+                   processor.connect(audioContext.destination);
+                   isRecording = true;
+
+               } catch (err) {
+                   log("Audio Error: " + err);
+                   stopSession();
+               }
+           }
+
+           function playAudioChunk(base64Data) {
+               if (!audioContext) return;
+               try {
+                   const binaryString = window.atob(base64Data);
+                   const len = binaryString.length;
+                   const bytes = new Uint8Array(len);
+                   for (let i = 0; i < len; i++) {
+                       bytes[i] = binaryString.charCodeAt(i);
+                   }
+                   const int16Data = new Int16Array(bytes.buffer);
+                   const float32Data = new Float32Array(int16Data.length);
+                   for (let i = 0; i < int16Data.length; i++) {
+                       float32Data[i] = int16Data[i] / 0x8000;
+                   }
+                   const buffer = audioContext.createBuffer(1, float32Data.length, 24000);
+                   buffer.getChannelData(0).set(float32Data);
+                   const source = audioContext.createBufferSource();
+                   source.buffer = buffer;
+                   source.connect(audioContext.destination);
+                   const currentTime = audioContext.currentTime;
+                   if (nextStartTime < currentTime) {
+                       nextStartTime = currentTime;
+                   }
+                   source.start(nextStartTime);
+                   nextStartTime += buffer.duration;
+                   source.onended = () => {
+                        if (audioContext.currentTime >= nextStartTime) {
+                            document.getElementById('status').textContent = "Listening...";
+                        }
+                   };
+               } catch (e) {
+                   log("Playback Error: " + e);
+               }
+           }
+
+           function stopSession() {
+               document.getElementById('startBtn').disabled = false;
+               document.getElementById('stopBtn').disabled = true;
+               document.getElementById('status').textContent = "Stopped";
+               // 타이머 인터벌 정지
+               if (timerInterval) clearInterval(timerInterval);
+               document.getElementById('timer-display').style.display = 'none';
+
+               if (processor) { processor.disconnect(); processor = null; }
+               if (inputSource) { inputSource.disconnect(); inputSource = null; }
+               if (audioContext) { audioContext.close(); audioContext = null; }
+               if (ws) { ws.close(); ws = null; }
+               isRecording = false;
+           }
+       </script>
+   </body>
+</html>
