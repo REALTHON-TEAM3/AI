@@ -60,7 +60,7 @@ async def get_ingredients_by_link(request: LinkRequest):
         raise HTTPException(status_code=500, detail="Google AI API key is not configured.")
 
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash")
     except Exception as e:
         logger.error(f"Failed to initialize Gemini model: {e}")
         raise HTTPException(status_code=500, detail="Failed to initialize Gemini model.")
